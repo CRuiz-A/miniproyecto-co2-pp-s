@@ -1,119 +1,102 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import numpy as np
-import plotly.graph_objects as go
-import re
+import json
 from pathlib import Path
+from typing import Dict, List, Tuple
+import re
 
-st.set_page_config(page_title="CO2 Frames (Client-side)", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="CO₂ Viewer", page_icon="🧊", layout="wide")
+
+BASE_DIR = Path(__file__).parent
+TIMESTEPS_DIR = BASE_DIR / "timesteps_export"
+CACHE_DIR = BASE_DIR / "outputs" / "cache"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+@st.cache_data(show_spinner=False)
 def read_grdecl_property(filepath: str) -> np.ndarray:
-    values = []
+    """Lee valores de un archivo GRDECL."""
+    values: List[float] = []
     reading = False
-    with open(filepath, 'r') as f:
+    with open(filepath, "r", encoding="utf-8") as f:
         for raw in f:
             line = raw.strip()
-            if not line or line.startswith('--'):
+            if not line or line.startswith("--"):
                 continue
-            if any(k in line for k in ['YMFS', 'SOIL', 'SWAT', 'SGAS', 'PRESSURE']):
+            if any(key in line for key in ["YMFS", "SOIL", "SWAT", "SGAS", "PRESSURE"]):
                 reading = True
                 continue
-            if line == '/' or line.startswith('/'):
+            if line == "/" or line.startswith("/"):
                 break
             if reading:
-                parts = line.replace('/', '').split()
-                for p in parts:
-                    if '*' in p:
-                        cnt, val = p.split('*')
+                parts = line.replace("/", "").split()
+                for part in parts:
+                    if "*" in part:
+                        count_str, value_str = part.split("*")
                         try:
-                            values.extend([float(val)] * int(cnt))
+                            values.extend([float(value_str)] * int(count_str))
                         except Exception:
                             continue
                     else:
                         try:
-                            values.append(float(p))
+                            values.append(float(part))
                         except Exception:
                             continue
-    return np.array(values)
+    return np.array(values, dtype=float)
 
 
-def build_voxels_from_values(ymfs_values: np.ndarray, threshold: float,
-                             nx: int = 100, ny: int = 100, nz: int = 10):
-    x_min, x_max = 0, 10000
-    y_min, y_max = 0, 10000
-    z_top, z_bottom = -2500, -2700
+@st.cache_data(show_spinner=False)
+def load_all_timesteps() -> Tuple[Dict[int, np.ndarray], List[int]]:
+    """Carga todos los timesteps YMFS."""
+    if not TIMESTEPS_DIR.exists():
+        return {}, []
 
+    files = sorted(TIMESTEPS_DIR.glob("YMFS_ts_*.GRDECL"))
+    data: Dict[int, np.ndarray] = {}
+    indices: List[int] = []
+
+    for filepath in files:
+        match = re.search(r"ts_(\d+)", filepath.name)
+        if not match:
+            continue
+        timestep = int(match.group(1))
+        data[timestep] = read_grdecl_property(str(filepath))
+        indices.append(timestep)
+
+    indices.sort()
+    return data, indices
+
+
+@st.cache_data(show_spinner=False)
+def preprocess_all_data(ymfs_dict: Dict[int, np.ndarray], ts_indices: List[int], threshold: float) -> Dict:
+    """Preprocesa todos los datos para JavaScript."""
+    nx, ny, nz = 100, 100, 10
+    x_min, x_max = 0.0, 10000.0
+    y_min, y_max = 0.0, 10000.0
+    z_top, z_bottom = -2500.0, -2700.0
+    
     cell_size_x = (x_max - x_min) / (nx - 1)
     cell_size_y = (y_max - y_min) / (ny - 1)
     cell_size_z = (z_bottom - z_top) / (nz - 1)
-
-    total = nx * ny * nz
-    if len(ymfs_values) < total:
-        full = np.zeros(total)
-        full[:len(ymfs_values)] = ymfs_values
-        ymfs_values = full
-
-    voxel_x, voxel_y, voxel_z = [], [], []
-    voxel_i, voxel_j, voxel_k = [], [], []
-    voxel_colors = []
-    vtx_count = 0
-
-    for k in range(nz - 1):
-        for j in range(ny - 1):
-            for i in range(nx - 1):
-                idx = i + j * nx + k * nx * ny
-                if ymfs_values[idx] >= threshold:
-                    val = ymfs_values[idx]
-                    x0 = x_min + i * cell_size_x
-                    y0 = y_min + j * cell_size_y
-                    z0 = z_top + k * cell_size_z
-                    verts = [
-                        [x0, y0, z0],
-                        [x0 + cell_size_x, y0, z0],
-                        [x0 + cell_size_x, y0 + cell_size_y, z0],
-                        [x0, y0 + cell_size_y, z0],
-                        [x0, y0, z0 + cell_size_z],
-                        [x0 + cell_size_x, y0, z0 + cell_size_z],
-                        [x0 + cell_size_x, y0 + cell_size_y, z0 + cell_size_z],
-                        [x0, y0 + cell_size_y, z0 + cell_size_z]
-                    ]
-                    voxel_x.extend([v[0] for v in verts])
-                    voxel_y.extend([v[1] for v in verts])
-                    voxel_z.extend([v[2] for v in verts])
-                    base = vtx_count
-                    faces = [
-                        [0,1,2],[0,2,3], [4,6,5],[4,7,6],
-                        [0,4,5],[0,5,1], [2,6,7],[2,7,3],
-                        [0,3,7],[0,7,4], [1,5,6],[1,6,2]
-                    ]
-                    for f in faces:
-                        voxel_i.append(base + f[0])
-                        voxel_j.append(base + f[1])
-                        voxel_k.append(base + f[2])
-                        voxel_colors.append(val)
-                    vtx_count += 8
-    return voxel_x, voxel_y, voxel_z, voxel_i, voxel_j, voxel_k, voxel_colors
-
-
-def build_injector_cubes():
+    
+    # Pozos inyectores (fijos)
     wells = [
-        (2500, 2500, -2500),
-        (2500, 7500, -2500),
-        (7500, 2500, -2500),
-        (7438, 7438, -2500)
+        (2500.0, 2500.0, -2500.0),
+        (2500.0, 7500.0, -2500.0),
+        (7500.0, 2500.0, -2500.0),
+        (7438.0, 7438.0, -2500.0),
     ]
+    
     cube_size = 200.0
     half = cube_size / 2.0
-    all_x, all_y, all_z = [], [], []
-    all_i, all_j, all_k = [], [], []
-    base = 0
-    faces = [
-        [0,1,2],[0,2,3], [4,6,5],[4,7,6],
-        [0,4,5],[0,5,1], [2,6,7],[2,7,3],
-        [0,3,7],[0,7,4], [1,5,6],[1,6,2]
-    ]
-    for (cx, cy, cz) in wells:
-        verts = [
+    
+    injector_vertices = []
+    injector_faces = []
+    vertex_offset = 0
+    
+    for cx, cy, cz in wells:
+        vertices = [
             [cx - half, cy - half, cz - half],
             [cx + half, cy - half, cz - half],
             [cx + half, cy + half, cz - half],
@@ -121,150 +104,436 @@ def build_injector_cubes():
             [cx - half, cy - half, cz + half],
             [cx + half, cy - half, cz + half],
             [cx + half, cy + half, cz + half],
-            [cx - half, cy + half, cz + half]
+            [cx - half, cy + half, cz + half],
         ]
-        all_x.extend([v[0] for v in verts])
-        all_y.extend([v[1] for v in verts])
-        all_z.extend([v[2] for v in verts])
-        for f in faces:
-            all_i.append(base + f[0])
-            all_j.append(base + f[1])
-            all_k.append(base + f[2])
-        base += 8
-    return all_x, all_y, all_z, all_i, all_j, all_k
+        injector_vertices.extend(vertices)
+        
+        faces = [
+            [0, 1, 2], [0, 2, 3], [4, 6, 5], [4, 7, 6],
+            [0, 4, 5], [0, 5, 1], [2, 6, 7], [2, 7, 3],
+            [0, 3, 7], [0, 7, 4], [1, 5, 6], [1, 6, 2],
+        ]
+        for face in faces:
+            injector_faces.append([vertex_offset + face[0], vertex_offset + face[1], vertex_offset + face[2]])
+        vertex_offset += 8
+    
+    # Datos por timestep (solo índices y valores de celdas > threshold)
+    timestep_data = {}
+    
+    for ts in ts_indices:
+        ymfs_values = ymfs_dict[ts]
+        total = nx * ny * nz
+        if len(ymfs_values) < total:
+            padded = np.zeros(total, dtype=float)
+            padded[:len(ymfs_values)] = ymfs_values
+            ymfs_values = padded
+        elif len(ymfs_values) > total:
+            ymfs_values = ymfs_values[:total]
+        
+        # Solo guardamos índices de celdas activas (> threshold)
+        active_cells = []
+        for k in range(nz):
+            for j in range(ny):
+                for i in range(nx):
+                    idx = i + j * nx + k * nx * ny
+                    value = ymfs_values[idx]
+                    if value >= threshold:
+                        x = x_min + i * cell_size_x
+                        y = y_min + j * cell_size_y
+                        z = z_top + k * cell_size_z
+                        active_cells.append({
+                            'x': float(x),
+                            'y': float(y),
+                            'z': float(z),
+                            'value': float(value)
+                        })
+        
+        timestep_data[str(ts)] = {
+            'cells': active_cells,
+            'count': len(active_cells)
+        }
+    
+    return {
+        'timesteps': ts_indices,
+        'data': timestep_data,
+        'injectors': {
+            'vertices': injector_vertices,
+            'faces': injector_faces
+        },
+        'grid': {
+            'cell_size_x': float(cell_size_x),
+            'cell_size_y': float(cell_size_y),
+            'cell_size_z': float(cell_size_z)
+        },
+        'bounds': {
+            'x': [float(x_min), float(x_max)],
+            'y': [float(y_min), float(y_max)],
+            'z': [float(z_bottom), float(z_top)]
+        }
+    }
 
 
-def load_all_timesteps():
-    base = Path(__file__).parent
-    tdir = base / 'timesteps_export'
-    if not tdir.exists():
-        return {}, []
-    files = sorted(tdir.glob('YMFS_ts_*.GRDECL'))
-    data = {}
-    idxs = []
-    for fp in files:
-        m = re.search(r'ts_(\d+)', fp.name)
-        if not m:
-            continue
-        ts = int(m.group(1))
-        arr = read_grdecl_property(str(fp))
-        data[ts] = arr
-        idxs.append(ts)
-    idxs.sort()
-    return data, idxs
+def create_viewer_html(data_json: str) -> str:
+    """Crea el HTML del viewer con Plotly."""
+    return f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+    <style>
+        body {{ margin: 0; padding: 0; overflow: hidden; }}
+        #plot {{ width: 100vw; height: 100vh; }}
+        #controls {{
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255,255,255,0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            font-family: Arial, sans-serif;
+            z-index: 1000;
+            max-width: 250px;
+        }}
+        .control-group {{
+            margin-bottom: 12px;
+        }}
+        label {{
+            display: block;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 4px;
+            color: #333;
+        }}
+        input[type="range"] {{
+            width: 100%;
+        }}
+        button {{
+            padding: 8px 16px;
+            margin: 4px 2px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }}
+        button:hover {{
+            background: #0056b3;
+        }}
+        button:disabled {{
+            background: #ccc;
+            cursor: not-allowed;
+        }}
+        .info {{
+            font-size: 11px;
+            color: #666;
+            margin-top: 8px;
+        }}
+        #loading {{
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 20px;
+            color: #007bff;
+        }}
+    </style>
+</head>
+<body>
+    <div id="loading">Cargando datos...</div>
+    <div id="controls" style="display:none;">
+        <div class="control-group">
+            <label>Timestep: <span id="ts-label">0</span></label>
+            <input type="range" id="ts-slider" min="0" max="0" value="0" step="1">
+        </div>
+        <div style="text-align: center;">
+            <button id="play-btn" onclick="togglePlay()">▶ Play</button>
+            <button onclick="previousTimestep()">◀</button>
+            <button onclick="nextTimestep()">▶</button>
+        </div>
+        <div class="control-group">
+            <label>Z Scale: <span id="zscale-label">1</span></label>
+            <input type="range" id="zscale-slider" min="1" max="20" value="1" step="1">
+        </div>
+        <div class="control-group">
+            <label>
+                <input type="checkbox" id="injectors-check" checked onchange="toggleInjectors()">
+                Mostrar inyectores
+            </label>
+        </div>
+        <div class="info">
+            <div>Celdas activas: <span id="cell-count">0</span></div>
+            <div>FPS: <span id="fps">0</span></div>
+        </div>
+    </div>
+    <div id="plot"></div>
+
+    <script>
+        const DATA = {data_json};
+        let currentTimestepIndex = 0;
+        let isPlaying = false;
+        let playInterval = null;
+        let showInjectors = true;
+        let lastFrameTime = Date.now();
+        let frameCount = 0;
+        let fps = 0;
+
+        function updateFPS() {{
+            frameCount++;
+            const now = Date.now();
+            if (now - lastFrameTime >= 1000) {{
+                fps = frameCount;
+                document.getElementById('fps').textContent = fps;
+                frameCount = 0;
+                lastFrameTime = now;
+            }}
+        }}
+
+        function buildMesh(cells, cellSize) {{
+            if (!cells || cells.length === 0) {{
+                return {{
+                    x: [], y: [], z: [],
+                    i: [], j: [], k: [],
+                    intensity: []
+                }};
+            }}
+
+            const x = [], y = [], z = [];
+            const i = [], j = [], k = [];
+            const intensity = [];
+            
+            const dx = cellSize.x;
+            const dy = cellSize.y;
+            const dz = cellSize.z;
+
+            let vertexIndex = 0;
+            
+            cells.forEach(cell => {{
+                const x0 = cell.x, y0 = cell.y, z0 = cell.z;
+                
+                // 8 vértices del cubo
+                x.push(x0, x0+dx, x0+dx, x0, x0, x0+dx, x0+dx, x0);
+                y.push(y0, y0, y0+dy, y0+dy, y0, y0, y0+dy, y0+dy);
+                z.push(z0, z0, z0, z0, z0+dz, z0+dz, z0+dz, z0+dz);
+                
+                // 12 triángulos (6 caras × 2 triángulos)
+                const faces = [
+                    [0,1,2],[0,2,3], [4,6,5],[4,7,6],
+                    [0,4,5],[0,5,1], [2,6,7],[2,7,3],
+                    [0,3,7],[0,7,4], [1,5,6],[1,6,2]
+                ];
+                
+                faces.forEach(face => {{
+                    i.push(vertexIndex + face[0]);
+                    j.push(vertexIndex + face[1]);
+                    k.push(vertexIndex + face[2]);
+                    intensity.push(cell.value);
+                }});
+                
+                vertexIndex += 8;
+            }});
+
+            return {{ x, y, z, i, j, k, intensity }};
+        }}
+
+        function buildInjectorMesh() {{
+            const vertices = DATA.injectors.vertices;
+            const faces = DATA.injectors.faces;
+            
+            const x = vertices.map(v => v[0]);
+            const y = vertices.map(v => v[1]);
+            const z = vertices.map(v => v[2]);
+            
+            const i = [], j = [], k = [];
+            faces.forEach(face => {{
+                i.push(face[0]);
+                j.push(face[1]);
+                k.push(face[2]);
+            }});
+            
+            return {{ x, y, z, i, j, k }};
+        }}
+
+        function updatePlot() {{
+            const ts = DATA.timesteps[currentTimestepIndex];
+            const tsData = DATA.data[ts];
+            const zScale = parseInt(document.getElementById('zscale-slider').value);
+            
+            document.getElementById('ts-label').textContent = ts;
+            document.getElementById('cell-count').textContent = tsData.count;
+            
+            const cellSize = DATA.grid;
+            const mesh = buildMesh(tsData.cells, {{
+                x: cellSize.cell_size_x,
+                y: cellSize.cell_size_y,
+                z: cellSize.cell_size_z
+            }});
+            
+            const traces = [];
+            
+            if (mesh.x.length > 0) {{
+                traces.push({{
+                    type: 'mesh3d',
+                    x: mesh.x, y: mesh.y, z: mesh.z,
+                    i: mesh.i, j: mesh.j, k: mesh.k,
+                    intensity: mesh.intensity,
+                    colorscale: 'Hot',
+                    cmin: 0.1,
+                    cmax: 1.0,
+                    showscale: true,
+                    flatshading: false,
+                    lighting: {{
+                        ambient: 0.6,
+                        diffuse: 0.7,
+                        specular: 0.2
+                    }},
+                    name: 'YMFS'
+                }});
+            }}
+            
+            if (showInjectors) {{
+                const injMesh = buildInjectorMesh();
+                traces.push({{
+                    type: 'mesh3d',
+                    x: injMesh.x, y: injMesh.y, z: injMesh.z,
+                    i: injMesh.i, j: injMesh.j, k: injMesh.k,
+                    color: 'blue',
+                    opacity: 0.9,
+                    flatshading: true,
+                    showscale: false,
+                    name: 'Inyectores'
+                }});
+            }}
+            
+            const layout = {{
+                title: `CO₂ (YMFS) - Timestep ${{ts}}`,
+                scene: {{
+                    xaxis: {{ title: 'X (m)', range: DATA.bounds.x }},
+                    yaxis: {{ title: 'Y (m)', range: DATA.bounds.y }},
+                    zaxis: {{ title: 'Z (m)', range: DATA.bounds.z }},
+                    aspectmode: 'manual',
+                    aspectratio: {{ x: 1, y: 1, z: zScale }},
+                    camera: {{
+                        eye: {{ x: 1.5, y: 1.5, z: 1.2 }}
+                    }}
+                }},
+                margin: {{ l: 0, r: 0, t: 40, b: 0 }},
+                paper_bgcolor: '#f8f9fa'
+            }};
+            
+            Plotly.react('plot', traces, layout, {{ responsive: true }});
+            updateFPS();
+        }}
+
+        function nextTimestep() {{
+            if (currentTimestepIndex < DATA.timesteps.length - 1) {{
+                currentTimestepIndex++;
+                document.getElementById('ts-slider').value = currentTimestepIndex;
+                updatePlot();
+            }}
+        }}
+
+        function previousTimestep() {{
+            if (currentTimestepIndex > 0) {{
+                currentTimestepIndex--;
+                document.getElementById('ts-slider').value = currentTimestepIndex;
+                updatePlot();
+            }}
+        }}
+
+        function togglePlay() {{
+            isPlaying = !isPlaying;
+            const btn = document.getElementById('play-btn');
+            
+            if (isPlaying) {{
+                btn.textContent = '⏸ Pause';
+                playInterval = setInterval(() => {{
+                    if (currentTimestepIndex < DATA.timesteps.length - 1) {{
+                        nextTimestep();
+                    }} else {{
+                        currentTimestepIndex = 0;
+                        document.getElementById('ts-slider').value = 0;
+                        updatePlot();
+                    }}
+                }}, 500);
+            }} else {{
+                btn.textContent = '▶ Play';
+                if (playInterval) {{
+                    clearInterval(playInterval);
+                    playInterval = null;
+                }}
+            }}
+        }}
+
+        function toggleInjectors() {{
+            showInjectors = document.getElementById('injectors-check').checked;
+            updatePlot();
+        }}
+
+        // Event listeners
+        document.getElementById('ts-slider').addEventListener('input', (e) => {{
+            currentTimestepIndex = parseInt(e.target.value);
+            updatePlot();
+        }});
+
+        document.getElementById('zscale-slider').addEventListener('input', (e) => {{
+            document.getElementById('zscale-label').textContent = e.target.value;
+            updatePlot();
+        }});
+
+        // Inicializar
+        window.addEventListener('load', () => {{
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('controls').style.display = 'block';
+            
+            const slider = document.getElementById('ts-slider');
+            slider.max = DATA.timesteps.length - 1;
+            
+            updatePlot();
+        }});
+    </script>
+</body>
+</html>
+"""
 
 
-def build_figure_frames(ymfs_dict: dict, timestep_indices: list, threshold: float,
-                        z_scale: int):
-    frames = []
-    first_ts = timestep_indices[0]
-    x,y,z,i,j,k,intensity = build_voxels_from_values(ymfs_dict[first_ts], threshold)
+def main() -> None:
+    st.title("🧊 CO₂ Optimized Viewer")
+    st.caption("Viewer optimizado con un solo HTML y datos en JavaScript")
 
-    fig = go.Figure(
-        data=[go.Mesh3d(
-            x=x, y=y, z=z, i=i, j=j, k=k,
-            intensity=intensity, colorscale='Hot', cmin=threshold, cmax=1.0,
-            showscale=True, name=f'CO2 ts{first_ts}',
-            flatshading=False, lighting=dict(ambient=0.7, diffuse=0.8, specular=0.2)
-        )]
-    )
+    threshold = st.sidebar.slider("Umbral mínimo YMFS", 0.0, 1.0, 0.10, 0.01)
 
-    # Inyectores como trace fijo (index 1)
-    inj_x, inj_y, inj_z, inj_i, inj_j, inj_k = build_injector_cubes()
-    fig.add_trace(go.Mesh3d(
-        x=inj_x, y=inj_y, z=inj_z, i=inj_i, j=inj_j, k=inj_k,
-        color='blue', opacity=0.85, flatshading=True, name='Inyectores',
-        showscale=False, visible=True
-    ))
-
-    for ts in timestep_indices:
-        vx,vy,vz,vi,vj,vk,vcol = build_voxels_from_values(ymfs_dict[ts], threshold)
-        frames.append(go.Frame(name=f"ts{ts}", data=[go.Mesh3d(
-            x=vx, y=vy, z=vz, i=vi, j=vj, k=vk,
-            intensity=vcol, colorscale='Hot', cmin=threshold, cmax=1.0,
-            showscale=True, name=f'CO2 ts{ts}', flatshading=False,
-            lighting=dict(ambient=0.7, diffuse=0.8, specular=0.2)
-        )]))
-
-    fig.frames = frames
-
-    fig.update_layout(
-        title=dict(text='CO2 (YMFS) - Control total en cliente', x=0.5),
-        scene=dict(
-            xaxis_title='X (m)', yaxis_title='Y (m)', zaxis_title='Z (m)',
-            aspectmode='manual', aspectratio=dict(x=1, y=1, z=z_scale),
-            xaxis=dict(range=[0, 10000]), yaxis=dict(range=[0, 10000]),
-            zaxis=dict(range=[-2700, -2500]),
-            uirevision='fixed'
-        ),
-        width=1400, height=900, margin=dict(l=0, r=0, t=60, b=0),
-        updatemenus=[
-            # Play/Pause (solo una vez)
-            dict(type='buttons', showactive=False, x=0.02, y=0.98,
-                 buttons=[
-                     dict(label='▶ Play', method='animate',
-                          args=[None, dict(frame=dict(duration=300, redraw=True), fromcurrent=True,
-                                           transition=dict(duration=0), repeat=False)]),
-                     dict(label='⏸ Pause', method='animate',
-                          args=[[None], dict(frame=dict(duration=0, redraw=False), mode='immediate',
-                                             transition=dict(duration=0))])
-                 ]),
-            # Escala Z (relayout, client-side)
-            dict(type='buttons', direction='down', x=0.02, y=0.80, showactive=True,
-                 buttons=[
-                     dict(label='Z x1', method='relayout', args=[{'scene.aspectratio': {'x':1,'y':1,'z':1}}]),
-                     dict(label='Z x5', method='relayout', args=[{'scene.aspectratio': {'x':1,'y':1,'z':5}}]),
-                     dict(label='Z x8', method='relayout', args=[{'scene.aspectratio': {'x':1,'y':1,'z':8}}]),
-                     dict(label='Z x10', method='relayout', args=[{'scene.aspectratio': {'x':1,'y':1,'z':10}}]),
-                     dict(label='Z x15', method='relayout', args=[{'scene.aspectratio': {'x':1,'y':1,'z':15}}]),
-                     dict(label='Z x20', method='relayout', args=[{'scene.aspectratio': {'x':1,'y':1,'z':20}}])
-                 ]),
-            # YMFS mínimo (cmin), client-side restyle del trace 0 (CO2)
-            dict(type='buttons', direction='down', x=0.02, y=0.62, showactive=True,
-                 buttons=[
-                     dict(label='YMFS ≥ 0.05', method='restyle', args=[{'cmin': 0.05}, [0]]),
-                     dict(label='YMFS ≥ 0.10', method='restyle', args=[{'cmin': 0.10}, [0]]),
-                     dict(label='YMFS ≥ 0.15', method='restyle', args=[{'cmin': 0.15}, [0]]),
-                     dict(label='YMFS ≥ 0.20', method='restyle', args=[{'cmin': 0.20}, [0]]),
-                     dict(label='YMFS ≥ 0.30', method='restyle', args=[{'cmin': 0.30}, [0]])
-                 ]),
-            # Toggle inyectores (trace 1)
-            dict(type='buttons', direction='down', x=0.02, y=0.44, showactive=True,
-                 buttons=[
-                     dict(label='Inyectores: ON', method='restyle', args=[{'visible': True}, [1]]),
-                     dict(label='Inyectores: OFF', method='restyle', args=[{'visible': False}, [1]])
-                 ]),
-        ],
-        sliders=[dict(
-            active=0,
-            currentvalue=dict(prefix='Timestep: ', visible=True),
-            steps=[dict(method='animate', label=str(ts),
-                        args=[[f"ts{ts}"], dict(mode='immediate', frame=dict(duration=0, redraw=True),
-                                                 transition=dict(duration=0))])
-                   for ts in timestep_indices]
-        )]
-    )
-    return fig
-
-
-def main():
-    st.title("⚡ CO2 3D (Frames, sin reruns)")
-    st.caption("Slider/Play, escala Z, YMFS mínimo y toggle de inyectores 100% en cliente (WebGL)")
-
-    # Defaults: z=1
-    threshold_default = 0.10
-    z_scale_default = 1
-
+    # Cargar datos
     with st.spinner("Cargando timesteps..."):
         ymfs_by_ts, ts_indices = load_all_timesteps()
+
     if not ts_indices:
-        st.error("No se encontraron timesteps en timesteps_export/YMFS_ts_*.GRDECL")
+        st.error("❌ No se encontraron archivos YMFS en timesteps_export/")
         return
 
-    with st.spinner("Construyendo frames (única vez)..."):
-        fig = build_figure_frames(ymfs_by_ts, ts_indices, threshold_default, z_scale_default)
+    st.success(f"✅ {len(ts_indices)} timesteps cargados")
 
-    st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True})
+    # Preprocesar datos
+    cache_file = CACHE_DIR / f"data_thr{threshold:.2f}.json"
+    
+    if cache_file.exists():
+        with st.spinner("Cargando datos preprocesados..."):
+            with open(cache_file, "r") as f:
+                processed_data = json.load(f)
+    else:
+        with st.spinner("Preprocesando datos (solo la primera vez)..."):
+            processed_data = preprocess_all_data(ymfs_by_ts, ts_indices, threshold)
+            with open(cache_file, "w") as f:
+                json.dump(processed_data, f)
+
+    st.info(f"📊 Total de celdas activas en todos los timesteps: {sum(processed_data['data'][str(ts)]['count'] for ts in ts_indices)}")
+
+    # Crear HTML
+    html_content = create_viewer_html(json.dumps(processed_data))
+    
+    # Mostrar
+    components.html(html_content, height=900, scrolling=False)
 
 
 if __name__ == "__main__":
