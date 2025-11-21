@@ -1,0 +1,20 @@
+dimens
+64 28 25 
+
+tops
+1792*2500.0 /
+
+dx
+44800*100
+
+dy
+44800*100
+
+dz
+44800*20
+
+external_file permeability.inc
+
+external_file porosity.inc
+
+

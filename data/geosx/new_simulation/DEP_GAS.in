@@ -1,0 +1,249 @@
+!  CCS in depleted gas reservoir case
+
+SIMULATION
+  SIMULATION_TYPE SUBSURFACE
+  PROCESS_MODELS
+    SUBSURFACE_FLOW Flow
+      MODE COMP3
+      OPTIONS
+       ISOTHERMAL
+       RESERVOIR_DEFAULTS
+      /
+    / ! end of subsurface_flow
+  / ! end of process models
+END  !! end simulation block
+
+SUBSURFACE
+
+#=========================== discretization ===================================
+
+GRID
+  TYPE grdecl grid.grdecl
+END
+
+#=========================== times ============================================
+TIME
+  START_DATE 1 JAN 2010
+  FINAL_DATE 1 JAN 2060
+  INITIAL_TIMESTEP_SIZE 1 d
+  MINIMUM_TIMESTEP_SIZE 1.0D-10 d
+  MAXIMUM_TIMESTEP_SIZE 60  d at 0. d
+  MAXIMUM_TIMESTEP_SIZE 120 d at 30 y
+END
+
+#=========================== output options ===================================
+
+OUTPUT
+  MASS_BALANCE_FILE
+    PERIODIC TIMESTEP 1
+  END
+  ECLIPSE_FILE
+    PERIOD_SUM TIMESTEP 1
+    DATES 1 JAN 2015 1 JAN 2020 1 JAN 2025
+    DATES 1 JAN 2030 1 JAN 2035 1 JAN 2040
+    DATES 1 JAN 2045 1 JAN 2050 1 JAN 2055 1 JAN 2060
+    WRITE_DENSITY
+    OUTFILE
+  END
+  LINEREPT
+END
+
+#=========================== material properties ==============================
+
+MATERIAL_PROPERTY formation
+  ID 1
+  ROCK_COMPRESSIBILITY    7.25d-5 1/Bar
+  ROCK_REFERENCE_PRESSURE 1.0     Bar
+  CHARACTERISTIC_CURVES ch1
+/
+
+#=========================== Molecular Diffusion  =============================
+
+FLUID_PROPERTY
+  PHASE GAS
+  GAS_DIFFUSION_COEFFICIENT 2.0d-5
+/
+
+#=========================== saturation functions =============================
+
+CHARACTERISTIC_CURVES ch1
+
+ TABLE swfn_table
+   PRESSURE_UNITS Bar
+   SWFN
+     0.2    0      0.0
+     0.25    0.0   0.0
+     0.3778 0.0180 0.0
+     0.4667 0.0607 0.0
+     0.5556 0.1438 0.0
+     0.6444 0.2809 0.0 
+     0.7000 0.4089 0.0
+     0.7333 0.4855 0.0
+     0.8222 0.7709 0.0
+     0.9111 1.0    0.0
+     1.0    1.0    0.0
+   /
+ END
+
+ TABLE sgfn_table
+  PRESSURE_UNITS Bar
+    SGFN
+     0.0     0     0
+     0.05    0     0
+     0.0889  0.001 0
+     0.1778  0.01  0
+     0.2667  0.03  0
+     0.3556  0.05  0
+     0.4445  0.10  0
+     0.5333  0.20  0
+     0.6222  0.35  0
+     0.65    0.39  0
+     0.7111  0.56  0
+     0.8     1.0   0
+    /
+ END
+
+/
+
+#=========================== EOSs =============================================
+
+EOS WATER
+  SURFACE_DENSITY 995.5
+END
+
+EOS GAS
+  FORMULA_WEIGHT 16.04d0
+  SURFACE_DENSITY 1.0995 kg/m^3
+  PVDG
+    DATA_UNITS ! Metric in the Eclipse sense
+      PRESSURE  Bar
+      FVF       m^3/m^3
+      VISCOSITY cP
+    END
+    DATA
+      TEMPERATURE 139.0
+         1.0135  1.186979 0.0107
+        34.4738  0.033261 0.0127
+        68.9476  0.016001 0.0134
+        82.7371  0.013160 0.0138
+        103.421  0.010358 0.0145
+        124.105  0.008535 0.0153
+        137.895  0.007636 0.0159
+        158.717  0.006597 0.0170
+        172.369  0.006190 0.0177
+        206.843  0.005531 0.0195
+        241.317  0.005118 0.0214
+        275.790  0.004840 0.0232
+        310.264  0.004617 0.0250
+        330.948  0.004509 0.0261
+      END !end TEMP block
+    END !endDATA
+    !specify temperature dependency for viscosity
+  END !end PVDG
+END
+
+EOS SOLVENT
+  SURFACE_DENSITY 1.0 kg/m^3
+  CO2_DATABASE co2_dbase.dat
+END
+
+#=========================== wells ==================================
+
+WELL_DATA injs1
+  RADIUS 0.0762 m
+  CIJK_D 16 7 1 5  
+  WELL_TYPE SOLVENT_INJECTOR
+  BHPL   500  Bar
+  SHUT
+  DATE 1 JAN 2025
+  OPEN
+  TARG_SSV 5000000 m^3/day
+  DATE 1 JAN 2040
+  SHUT
+END
+
+WELL_DATA injs2
+  CIJK_D 16 21 1 5  
+  WELL_TYPE SOLVENT_INJECTOR
+  BHPL   500  Bar
+  SHUT
+  DATE 1 JAN 2025
+  OPEN
+  TARG_SSV 5000000 m^3/day
+  DATE 1 JAN 2040
+  SHUT
+END
+
+WELL_DATA injs3
+  CIJK_D 48 7 1 5  
+  WELL_TYPE SOLVENT_INJECTOR
+  BHPL   500  Bar
+  SHUT
+  DATE 1 JAN 2025
+  OPEN
+  TARG_SSV 5000000 m^3/day
+  DATE 1 JAN 2040
+  SHUT
+END
+
+WELL_DATA injs4
+  CIJK_D 48 21 1 5 
+  WELL_TYPE SOLVENT_INJECTOR
+  BHPL   500  Bar
+  SHUT
+  DATE 1 JAN 2025
+  OPEN
+  TARG_SSV 5000000 m^3/day
+  DATE 1 JAN 2040
+  SHUT
+END
+
+WELL_DATA prod1
+  CIJK_D  1 1 5 10
+  WELL_TYPE PRODUCER
+  BHPL      50   Bar
+  TARG_GSV 12000000 m^3/day
+  DATE 1 JAN 2025
+  SHUT
+END
+
+WELL_DATA prod2
+  CIJK_D  1 28 5 10
+  WELL_TYPE PRODUCER
+  BHPL      50   Bar
+  TARG_GSV 12000000 m^3/day
+  DATE 1 JAN 2025
+  SHUT
+END
+
+WELL_DATA prod3
+  CIJK_D  64 1 5 10
+  WELL_TYPE PRODUCER
+  BHPL      50   Bar
+  TARG_GSV 12000000 m^3/day
+  DATE 1 JAN 2025
+  SHUT
+END
+
+WELL_DATA prod4
+  CIJK_D  64 28 5 10
+  WELL_TYPE PRODUCER
+  BHPL      50   Bar
+  TARG_GSV 12000000 m^3/day
+  DATE 1 JAN 2025
+  SHUT
+END
+
+#=========================== EQUILIBRATION ==================================
+
+EQUILIBRATION
+
+  PRESSURE 300 Bar
+  DATUM_D  2500 m
+  WGC_D    2700.0 m
+  PCWG_WGC 0.0    Bar
+
+  RTEMP 139 C
+/
+
+END_SUBSURFACE
