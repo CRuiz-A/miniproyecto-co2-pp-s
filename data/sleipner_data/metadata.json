@@ -1,0 +1,52 @@
+{
+  "source_file": "Sleipner_Reference_Model.grdecl",
+  "specgrid_original": [
+    64,
+    118,
+    263
+  ],
+  "dimensions_visualization": {
+    "x": 263,
+    "y": 118,
+    "z": 64
+  },
+  "facies_range": [
+    1.0,
+    18.0
+  ],
+  "facies_unique": [
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0,
+    10.0,
+    11.0,
+    12.0,
+    13.0,
+    14.0,
+    15.0,
+    16.0,
+    17.0,
+    18.0
+  ],
+  "permeability_range_md": [
+    0.00100000005,
+    2000.0
+  ],
+  "porosity_range": [
+    0.340000004,
+    0.360000014
+  ],
+  "total_cells": 1986176,
+  "array_shape": [
+    64,
+    118,
+    263
+  ],
+  "coordinate_system": "Array shape is (z, y, x) where x=263, y=118, z=64"
+}

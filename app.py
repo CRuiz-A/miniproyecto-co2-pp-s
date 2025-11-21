@@ -1158,23 +1158,124 @@ def main() -> None:
     # CSS y JavaScript para ocultar/mostrar sidebar
     st.markdown("""
     <style>
+        /* Variables de color personalizadas */
+        :root {
+            --text: #eceef0;
+            --background: #050606;
+            --primary: #1d96e2;
+            --secondary: #234b7c;
+            --accent: #b83232;
+        }
+        
+        /* Aplicar colores a la página principal */
+        .stApp {
+            background-color: var(--background) !important;
+            color: var(--text) !important;
+        }
+        
+        /* Sidebar */
+        section[data-testid="stSidebar"] {
+            background-color: #080d12 !important;
+            color: var(--text) !important;
+        }
+        
+        /* Texto principal */
+        .main .block-container,
+        .main h1,
+        .main h2,
+        .main h3,
+        .main p,
+        .main div,
+        .main span,
+        .main label {
+            color: var(--text) !important;
+        }
+        
+        /* Títulos */
+        h1, h2, h3, h4, h5, h6 {
+            color: var(--text) !important;
+        }
+        
+        /* Botones */
+        .stButton > button {
+            background-color: var(--primary) !important;
+            color: var(--text) !important;
+            border: 1px solid var(--primary) !important;
+        }
+        
+        .stButton > button:hover {
+            background-color: var(--secondary) !important;
+            border-color: var(--secondary) !important;
+        }
+        
+        /* Sliders */
+        .stSlider > div > div > div {
+            background-color: var(--primary) !important;
+        }
+        
+        /* Checkboxes */
+        .stCheckbox > label {
+            color: var(--text) !important;
+        }
+        
+        /* Selectboxes */
+        .stSelectbox > label {
+            color: var(--text) !important;
+        }
+        
+        /* Tabs */
+        .stTabs [data-baseweb="tab-list"] {
+            background-color: var(--background) !important;
+        }
+        
+        .stTabs [data-baseweb="tab"] {
+            color: var(--text) !important;
+        }
+        
+        .stTabs [aria-selected="true"] {
+            color: var(--primary) !important;
+        }
+        
+        /* Inputs */
+        .stTextInput > div > div > input,
+        .stNumberInput > div > div > input {
+            background-color: var(--background) !important;
+            color: var(--text) !important;
+            border-color: var(--secondary) !important;
+        }
+        
+        /* Captions y info boxes */
+        .stCaption,
+        .stInfo,
+        .stSuccess,
+        .stWarning,
+        .stError {
+            color: var(--text) !important;
+        }
+        
+        /* Spinner */
+        .stSpinner > div {
+            border-color: var(--primary) !important;
+        }
+        
         /* Botón para ocultar/mostrar sidebar */
         .sidebar-toggle {
             position: fixed;
             top: 10px;
             left: 10px;
             z-index: 999;
-            background-color: #0e1117;
-            color: white;
-            border: 1px solid #262730;
+            background-color: var(--secondary) !important;
+            color: var(--text) !important;
+            border: 1px solid var(--primary) !important;
             border-radius: 4px;
             padding: 8px 12px;
             cursor: pointer;
             font-size: 14px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
         .sidebar-toggle:hover {
-            background-color: #262730;
+            background-color: var(--primary) !important;
+            border-color: var(--accent) !important;
         }
         
         /* Ocultar sidebar cuando tiene la clase 'hidden' */
@@ -1191,6 +1292,24 @@ def main() -> None:
         .sidebar-hidden section[data-testid="stSidebar"] {
             transform: translateX(-100%);
             transition: transform 0.3s ease;
+        }
+        
+        /* Scrollbar personalizado */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--background);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--secondary);
+            border-radius: 5px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
         }
     </style>
     

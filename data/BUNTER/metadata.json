@@ -1,0 +1,74 @@
+{
+  "dataset": "Bunter CO2 Storage Model",
+  "source": "Eclipse E300 simulation model",
+  "dimensions": {
+    "nx": 110,
+    "ny": 63,
+    "nz": 65,
+    "total_cells": 450450,
+    "shape": [
+      65,
+      63,
+      110
+    ]
+  },
+  "properties": {
+    "facies": {
+      "description": "Rock type regions (SATNUM from Eclipse)",
+      "dtype": "int32",
+      "shape": [
+        65,
+        63,
+        110
+      ],
+      "unique_values": [
+        1,
+        2
+      ],
+      "min": 1,
+      "max": 2
+    },
+    "permeability": {
+      "description": "Horizontal permeability (PERMX) in mD",
+      "dtype": "float32",
+      "shape": [
+        65,
+        63,
+        110
+      ],
+      "unit": "mD",
+      "min": 0.006500000134110451,
+      "max": 14987.919921875,
+      "mean": 179.34295654296875,
+      "median": 9.579999923706055
+    },
+    "porosity": {
+      "description": "Porosity (fraction)",
+      "dtype": "float32",
+      "shape": [
+        65,
+        63,
+        110
+      ],
+      "unit": "fraction",
+      "min": 9.999999747378752e-06,
+      "max": 0.3499999940395355,
+      "mean": 0.13697893917560577,
+      "median": 0.15000000596046448
+    }
+  },
+  "facies_mapping": {
+    "1": "Bunter Sandstone (main reservoir)",
+    "2": "Secondary reservoir zone",
+    "3": "Low permeability zone",
+    "4": "Seal/Caprock",
+    "5": "Inactive cells"
+  },
+  "notes": [
+    "Grid dimensions: 110 \u00d7 63 \u00d7 65 (NX \u00d7 NY \u00d7 NZ)",
+    "Data order: (k, j, i) - depth, Y, X",
+    "Permeability values in mD (millidarcies)",
+    "Porosity values as fraction (0-1)",
+    "Facies values correspond to SATNUM regions from Eclipse"
+  ]
+}
